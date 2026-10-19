@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 interface AccessLog {
   id: string
@@ -106,6 +107,7 @@ export function AdminDashboardClient({ initialLogs, stats, userEmail }: AdminDas
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <ThemeToggle />
             <Link 
               href="/"
               className="p-2 rounded-lg hover:bg-muted transition-colors"
