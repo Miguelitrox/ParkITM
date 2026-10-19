@@ -4,7 +4,9 @@ import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { QRScanner } from "@/components/qr-scanner"
 import { BarrierAnimation } from "@/components/barrier-animation"
+import Image from "next/image"
 import Link from "next/link"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 type Status = "idle" | "scanning" | "validating" | "success" | "denied"
 
@@ -114,10 +116,15 @@ export default function HomePage() {
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
-              <svg className="w-6 h-6 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-              </svg>
+            <div className="size-11 overflow-hidden rounded-full border-2 border-primary/30 bg-white shadow-sm">
+              <Image
+                src="/logo-itm.png"
+                alt="Escudo del Instituto Tecnológico de Morelia"
+                width={44}
+                height={44}
+                className="size-full object-cover"
+                priority
+              />
             </div>
             <div>
               <h1 className="text-xl font-bold text-foreground">PARKITM</h1>
@@ -132,6 +139,8 @@ export default function HomePage() {
               </span>
             </div>
             
+            <ThemeToggle />
+
             {/* Boton de Admin (Candado) */}
             <Link 
               href="/admin/login"

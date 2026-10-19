@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useTheme } from 'next-themes'
 import { Check, Laptop, Moon, Sun } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -18,6 +19,19 @@ const themes = [
 
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) {
+    return (
+      <Button variant="outline" size="icon" aria-label="Cambiar tema" disabled>
+        <Sun aria-hidden="true" />
+      </Button>
+    )
+  }
 
   return (
     <DropdownMenu>
