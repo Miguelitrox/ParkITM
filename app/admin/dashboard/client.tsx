@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { AdminMetrics } from "@/components/admin-metrics"
 
 interface AccessLog {
   id: string
@@ -14,6 +15,7 @@ interface AccessLog {
   carrera: string | null
   access_type: "entrada" | "salida"
   access_time: string
+  tiempo_respuesta_ms: number | null
 }
 
 interface Stats {
@@ -33,6 +35,8 @@ export function AdminDashboardClient({ initialLogs, stats, userEmail }: AdminDas
   const [logs, setLogs] = useState<AccessLog[]>(initialLogs)
   const [filter, setFilter] = useState<"all" | "entrada" | "salida">("all")
   const [searchTerm, setSearchTerm] = useState("")
+  const [from, setFrom] = useState("")
+  const [to, setTo] = useState("")
   const router = useRouter()
   const supabase = createClient()
 
@@ -131,6 +135,7 @@ export function AdminDashboardClient({ initialLogs, stats, userEmail }: AdminDas
       </header>
 
       <div className="container mx-auto px-4 py-8">
+        <AdminMetrics logs={logs} from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
         {/* Estadisticas */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <motion.div
