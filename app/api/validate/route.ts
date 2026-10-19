@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
-// Crear cliente de Supabase con service role para bypass RLS
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase service credentials are not configured")
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey)
+}
 
 // Palabras clave que confirman que el alumno está activo
 const PALABRAS_CLAVE_ACTIVO = [
@@ -128,6 +133,8 @@ async function registrarAcceso(
   const accessType = isEntry ? "entrada" : "salida"
 
   // Registrar en la bitacora
+  const supabaseAdmin = getSupabaseAdmin()
+
   await supabaseAdmin.from("access_logs").insert({
     control_number: controlNumber,
     student_name: studentName,
@@ -151,6 +158,7 @@ async function registrarAcceso(
 }
 
 async function verificarEstadoEstudiante(controlNumber: string): Promise<boolean | null> {
+  const supabaseAdmin = getSupabaseAdmin()
   const { data } = await supabaseAdmin
     .from("student_status")
     .select("is_inside")
