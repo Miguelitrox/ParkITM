@@ -14,9 +14,9 @@ export default async function AdminDashboardPage() {
   // Obtener los logs de acceso
   const { data: accessLogs } = await supabase
     .from("access_logs")
-    .select("*")
+    .select("id, control_number, student_name, carrera, access_type, access_time, tiempo_respuesta_ms")
     .order("access_time", { ascending: false })
-    .limit(100)
+    .limit(5000)
 
   // Obtener estadisticas
   const { data: todayLogs } = await supabase

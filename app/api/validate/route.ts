@@ -128,7 +128,8 @@ async function registrarAcceso(
   controlNumber: string,
   studentName: string,
   carrera: string,
-  isEntry: boolean
+  isEntry: boolean,
+  tiempoRespuestaMs: number
 ): Promise<{ accessType: "entrada" | "salida" }> {
   const accessType = isEntry ? "entrada" : "salida"
 
@@ -141,6 +142,7 @@ async function registrarAcceso(
     carrera: carrera || null,
     access_type: accessType,
     access_time: new Date().toISOString(),
+    tiempo_respuesta_ms: tiempoRespuestaMs,
   })
 
   // Actualizar el estado del estudiante
@@ -169,6 +171,7 @@ async function verificarEstadoEstudiante(controlNumber: string): Promise<boolean
 }
 
 export async function POST(request: NextRequest) {
+  const startedAt = performance.now()
   try {
     const { url } = await request.json()
 
@@ -250,7 +253,8 @@ export async function POST(request: NextRequest) {
     const isEntry = isCurrentlyInside === null || isCurrentlyInside === false
 
     // Registrar el acceso
-    const { accessType } = await registrarAcceso(uniqueId, nombre, carrera, isEntry)
+    const tiempoRespuestaMs = Math.round(performance.now() - startedAt)
+    const { accessType } = await registrarAcceso(uniqueId, nombre, carrera, isEntry, tiempoRespuestaMs)
 
     // Generar mensaje segun tipo de acceso
     const mensaje = isEntry 
