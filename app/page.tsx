@@ -48,14 +48,14 @@ export default function HomePage() {
 
       if (result.activo) {
         setStatus("success")
-        setStudentName(result.nombre || "ALUMNO")
+        setStudentName(result.nombre)
         setLastMessage(result.mensaje)
         setAccessType(result.accessType)
         
         // Agregar al historial
         setScanHistory(prev => [{
           time: new Date().toLocaleTimeString('es-MX'),
-          name: result.nombre || "ALUMNO",
+          name: result.nombre,
           success: true,
           type: result.accessType
         }, ...prev.slice(0, 4)])

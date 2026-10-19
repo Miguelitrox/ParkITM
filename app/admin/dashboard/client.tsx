@@ -13,9 +13,44 @@ interface AccessLog {
   control_number: string
   student_name: string
   carrera: string | null
+  qr_url: string | null
   access_type: "entrada" | "salida"
   access_time: string
   tiempo_respuesta_ms: number | null
+}
+
+const esUrl = (valor: string | null | undefined): valor is string =>
+  !!valor && /^https?:\/\//i.test(valor)
+
+// Nombre del alumno con enlace a su credencial digital (URL del QR)
+function AlumnoInfo({ log }: { log: AccessLog }) {
+  // Los registros antiguos guardaban la URL del QR en control_number
+  const credencialUrl = esUrl(log.qr_url) ? log.qr_url : esUrl(log.control_number) ? log.control_number : null
+  const numeroControl = esUrl(log.control_number) ? null : log.control_number
+
+  return (
+    <div>
+      {credencialUrl ? (
+        <a
+          href={credencialUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Ver credencial digital"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground hover:text-primary hover:underline transition-colors"
+        >
+          {log.student_name || "Ver credencial"}
+          <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          </svg>
+        </a>
+      ) : (
+        <p className="text-sm font-medium text-foreground">{log.student_name || "Sin nombre"}</p>
+      )}
+      {numeroControl && (
+        <p className="text-xs text-muted-foreground">{numeroControl}</p>
+      )}
+    </div>
+  )
 }
 
 interface Stats {
@@ -70,7 +105,7 @@ export function AdminDashboardClient({ initialLogs, stats, userEmail }: AdminDas
   const filteredLogs = logs.filter((log) => {
     const matchesFilter = filter === "all" || log.access_type === filter
     const matchesSearch = 
-      log.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (log.student_name ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       log.control_number.includes(searchTerm) ||
       (log.carrera?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false)
     return matchesFilter && matchesSearch
@@ -339,13 +374,10 @@ export function AdminDashboardClient({ initialLogs, stats, userEmail }: AdminDas
                           </span>
                         </td>
                         <td className="px-6 py-4">
-                          <div>
-                            <p className="text-sm font-medium text-foreground">{log.student_name}</p>
-                            <p className="text-xs text-muted-foreground">{log.control_number}</p>
-                          </div>
+                          <AlumnoInfo log={log} />
                         </td>
                         <td className="px-6 py-4 hidden md:table-cell">
-                          <p className="text-sm text-muted-foreground truncate max-w-[200px]">
+                          <p className="text-sm text-muted-foreground truncate max-w-[220px]" title={log.carrera ?? undefined}>
                             {log.carrera || "-"}
                           </p>
                         </td>

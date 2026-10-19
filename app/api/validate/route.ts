@@ -12,122 +12,103 @@ function getSupabaseAdmin() {
   return createClient(supabaseUrl, serviceRoleKey)
 }
 
-// Palabras clave que confirman que el alumno está activo
-const PALABRAS_CLAVE_ACTIVO = [
-  "ACTIVO", "ACTIVO IRREGULAR", "ACTIVO REGULAR",
-  "Estatus: Activo", "Dado de Alta", "DADO DE ALTA", "activo",
-]
+// Solo se aceptan QR de la credencial digital oficial del ITM
+const HOST_CREDENCIAL = "sim.morelia.tecnm.mx"
+const RUTA_CREDENCIAL = "/qr-credencial-estudiante"
 
-// Lista negra de palabras que no son nombres
-const NO_ES_NOMBRE = new Set([
-  'ESTUDIANTE', 'EGRESADO', 'DOCENTE', 'PERSONAL', 'ADMINISTRATIVO',
-  'ACTIVO', 'INACTIVO', 'REGULAR', 'IRREGULAR',
-  'ACTIVO IRREGULAR', 'ACTIVO REGULAR', 'INACTIVO IRREGULAR',
-  'TECNM', 'ITM', 'MORELIA', 'IMSS',
-])
+// Numero de control: 8 digitos, opcionalmente con letra al inicio (ej. C19120123)
+const PATRON_NUMERO_CONTROL = /^[A-Z]?\d{7,10}$/i
 
-function limpiarTexto(texto: string): string {
-  const tabla: Record<string, string> = {
-    'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ü': 'u', 'ñ': 'n',
-    'à': 'a', 'è': 'e', 'ì': 'i', 'ò': 'o', 'ù': 'u',
-    'â': 'a', 'ê': 'e', 'î': 'i', 'ô': 'o', 'û': 'u',
-    'Á': 'A', 'É': 'E', 'Í': 'I', 'Ó': 'O', 'Ú': 'U', 'Ü': 'U', 'Ñ': 'N',
-    'À': 'A', 'È': 'E', 'Ì': 'I', 'Ò': 'O', 'Ù': 'U',
-    'Â': 'A', 'Ê': 'E', 'Î': 'I', 'Ô': 'O', 'Û': 'U',
-  }
-  return texto.split('').map(c => tabla[c] || c).join('')
+// Nombre: de 2 a 8 palabras formadas solo por letras (incluye acentos y Ñ)
+const PATRON_NOMBRE = /^[A-ZÁÉÍÓÚÜÑ]+(?: [A-ZÁÉÍÓÚÜÑ]+){1,7}$/i
+
+interface DatosCredencial {
+  nombre: string
+  numeroControl: string
+  carrera: string
+  estatus: string
+  activo: boolean
 }
 
-function esPalabraNombre(palabra: string): boolean {
-  return (
-    palabra.length >= 2 &&
-    /^[A-Za-záéíóúÁÉÍÓÚñÑüÜ]+$/.test(palabra) &&
-    palabra === palabra.toUpperCase()
-  )
+function esUrlCredencial(url: URL): boolean {
+  return url.hostname === HOST_CREDENCIAL && url.pathname.startsWith(RUTA_CREDENCIAL)
 }
 
-function extraerNumeroControl(url: string): string {
-  // Intentar extraer el numero de control de la URL
-  const match = url.match(/\/(\d{8,})/) || url.match(/id=(\d{8,})/) || url.match(/control=(\d{8,})/)
-  return match ? match[1] : ""
+function decodificarEntidades(texto: string): string {
+  const acentos: Record<string, string> = { acute: "́", tilde: "̃", uml: "̈" }
+  return texto
+    .replace(/&nbsp;/g, " ")
+    .replace(/&([A-Za-z])(acute|tilde|uml);/g, (_, letra, tipo) => (letra + acentos[tipo]).normalize("NFC"))
+    .replace(/&#(\d+);/g, (_, codigo) => String.fromCharCode(Number(codigo)))
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
 }
 
-function extraerCarrera(html: string): string {
-  // Buscar patrones comunes de carrera
-  const patrones = [
-    /INGENIERIA\s+(?:EN\s+)?[A-ZÁÉÍÓÚÑ\s]+/gi,
-    /LICENCIATURA\s+EN\s+[A-ZÁÉÍÓÚÑ\s]+/gi,
-    /MAESTRIA\s+EN\s+[A-ZÁÉÍÓÚÑ\s]+/gi,
-  ]
+// Convierte el HTML en una lista de lineas con el texto visible (una por elemento)
+function extraerLineas(html: string): string[] {
+  const texto = html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<[^>]+>/g, "\n")
 
-  for (const patron of patrones) {
-    const match = html.match(patron)
-    if (match) {
-      return match[0].trim()
-    }
-  }
-
-  return ""
+  return decodificarEntidades(texto)
+    .split("\n")
+    .map(l => l.replace(/\s+/g, " ").trim())
+    .filter(l => l.length > 0)
 }
 
-function extraerNombreITM(html: string): string {
-  // Extraer solo el texto visible del HTML
-  const textoLimpio = html
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<[^>]+>/g, '\n')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\s+/g, ' ')
+/*
+ * Estructura de la credencial (sim.morelia.tecnm.mx):
+ *   ESTUDIANTE
+ *   ACTIVO REGULAR                          <- estatus
+ *   APELLIDO APELLIDO NOMBRE(S)             <- nombre
+ *   23560518                                <- numero de control
+ *   INGENIERÍA EN SISTEMAS COMPUTACIONALES  <- carrera
+ *   Semestre: 7
+ * Antes aparece un tooltip con los nombres de los autores del sistema,
+ * por eso el nombre se toma a partir del estatus y anclado al numero de control.
+ */
+function extraerDatosCredencial(html: string): DatosCredencial {
+  const lineas = extraerLineas(html)
 
-  // Dividir en lineas y limpiar
-  const lineas = textoLimpio.split('\n')
-    .map(l => l.trim())
-    .filter(l => l.length > 2)
+  const idxTipo = lineas.findIndex(l => l.toUpperCase() === "ESTUDIANTE")
+  const idxEstatus = idxTipo !== -1
+    ? idxTipo + 1
+    : lineas.findIndex(l => /\b(IN)?ACTIVO\b/i.test(l))
+  const estatus = idxEstatus !== -1 && idxEstatus < lineas.length ? lineas[idxEstatus] : ""
 
-  // Buscar el indice donde aparece "ACTIVO" o "INACTIVO"
-  let idxEstatus = -1
-  for (let i = 0; i < lineas.length; i++) {
-    if (lineas[i].toUpperCase().includes('ACTIVO') || lineas[i].toUpperCase().includes('INACTIVO')) {
-      idxEstatus = i
+  // \bACTIVO evita que "INACTIVO" se tome como activo
+  const activo = /^ACTIVO\b/i.test(estatus) || /^DADO DE ALTA$/i.test(estatus)
+
+  // El numero de control va justo despues del nombre
+  const inicio = Math.max(idxEstatus + 1, 1)
+  let nombre = ""
+  let numeroControl = ""
+  let carrera = ""
+
+  for (let i = inicio; i < lineas.length; i++) {
+    if (PATRON_NUMERO_CONTROL.test(lineas[i]) && PATRON_NOMBRE.test(lineas[i - 1])) {
+      numeroControl = lineas[i].toUpperCase()
+      nombre = lineas[i - 1].toUpperCase()
+
+      const siguiente = lineas[i + 1] ?? ""
+      if (siguiente && !/[\d:]/.test(siguiente)) {
+        carrera = siguiente.toUpperCase()
+      }
       break
     }
   }
 
-  const inicio = idxEstatus !== -1 ? idxEstatus + 1 : 0
-
-  // Buscar el nombre en las lineas posteriores al estatus
-  for (let i = inicio; i < Math.min(inicio + 20, lineas.length); i++) {
-    const txt = lineas[i]
-
-    // STOP: numero de control (texto puramente numerico)
-    if (/^\d+$/.test(txt.trim())) break
-
-    // Saltar lista negra
-    if (NO_ES_NOMBRE.has(txt.trim().toUpperCase())) continue
-
-    // Saltar si contiene digitos
-    if (/\d/.test(txt)) continue
-
-    // Saltar caracteres especiales
-    if (/[#@:\-\+\(\)\[\]\{\}\\\/\.\,\"\']/g.test(txt)) continue
-
-    // El nombre debe tener entre 2 y 6 palabras, todas MAYUSCULAS
-    const palabras = txt.trim().split(/\s+/)
-    if (palabras.length >= 2 && palabras.length <= 6 && palabras.every(esPalabraNombre)) {
-      return txt.trim()
-    }
-  }
-
-  return ""
+  return { nombre, numeroControl, carrera, estatus, activo }
 }
 
 async function registrarAcceso(
   controlNumber: string,
   studentName: string,
   carrera: string,
+  qrUrl: string,
   isEntry: boolean,
   tiempoRespuestaMs: number
 ): Promise<{ accessType: "entrada" | "salida" }> {
@@ -136,17 +117,19 @@ async function registrarAcceso(
   // Registrar en la bitacora
   const supabaseAdmin = getSupabaseAdmin()
 
-  await supabaseAdmin.from("access_logs").insert({
+  const { error: logError } = await supabaseAdmin.from("access_logs").insert({
     control_number: controlNumber,
     student_name: studentName,
     carrera: carrera || null,
+    qr_url: qrUrl,
     access_type: accessType,
     access_time: new Date().toISOString(),
     tiempo_respuesta_ms: tiempoRespuestaMs,
   })
+  if (logError) console.error("[v0] Error inserting access log:", logError)
 
   // Actualizar el estado del estudiante
-  await supabaseAdmin.from("student_status").upsert({
+  const { error: statusError } = await supabaseAdmin.from("student_status").upsert({
     control_number: controlNumber,
     student_name: studentName,
     carrera: carrera || null,
@@ -155,6 +138,7 @@ async function registrarAcceso(
   }, {
     onConflict: "control_number"
   })
+  if (statusError) console.error("[v0] Error updating student status:", statusError)
 
   return { accessType }
 }
@@ -183,8 +167,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Validar que sea una URL valida
+    let parsedUrl: URL
     try {
-      new URL(url)
+      parsedUrl = new URL(url.trim())
     } catch {
       return NextResponse.json(
         { error: "URL invalida" },
@@ -192,11 +177,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Extraer numero de control de la URL
-    const controlNumber = extraerNumeroControl(url)
+    // Validar que el QR sea de una credencial del ITM
+    if (!esUrlCredencial(parsedUrl)) {
+      return NextResponse.json({
+        activo: false,
+        mensaje: "El QR no corresponde a una credencial digital del ITM.",
+        nombre: "",
+        accessType: null
+      })
+    }
+
+    const qrUrl = parsedUrl.toString()
 
     // Hacer la peticion a la pagina del QR
-    const response = await fetch(url, {
+    const response = await fetch(qrUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
@@ -205,8 +199,8 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       return NextResponse.json(
-        { 
-          activo: false, 
+        {
+          activo: false,
           mensaje: `Error HTTP: ${response.status}`,
           nombre: "",
           accessType: null
@@ -217,36 +211,32 @@ export async function POST(request: NextRequest) {
 
     const html = await response.text()
 
-    // Extraer nombre y carrera
-    const nombreCrudo = extraerNombreITM(html)
-    const nombre = nombreCrudo ? limpiarTexto(nombreCrudo) : ""
-    const carrera = extraerCarrera(html)
+    // Extraer nombre, numero de control, carrera y estatus de la credencial
+    const { nombre, numeroControl, carrera, estatus, activo } = extraerDatosCredencial(html)
 
-    // Verificar estatus activo
-    let activo = false
-    let estatusEncontrado = ""
-    
-    for (const palabra of PALABRAS_CLAVE_ACTIVO) {
-      if (html.includes(palabra)) {
-        activo = true
-        estatusEncontrado = palabra
-        break
-      }
+    // Sin nombre y numero de control no se puede verificar la identidad
+    if (!nombre || !numeroControl) {
+      return NextResponse.json({
+        activo: false,
+        mensaje: "No se pudo verificar el nombre del alumno en la credencial.",
+        nombre: "",
+        accessType: null
+      })
     }
 
     if (!activo) {
       return NextResponse.json({
         activo: false,
-        mensaje: "No se encontro estatus activo en la pagina.",
+        mensaje: `Alumno no activo${estatus ? ` (${estatus})` : ""}.`,
         nombre,
+        numeroControl,
         accessType: null
       })
     }
 
     // Verificar estado actual del estudiante (si ya esta adentro o afuera)
-    const uniqueId = controlNumber || nombre || url
-    const isCurrentlyInside = await verificarEstadoEstudiante(uniqueId)
-    
+    const isCurrentlyInside = await verificarEstadoEstudiante(numeroControl)
+
     // Si es null, es primera vez - es entrada
     // Si es true (esta adentro), es salida
     // Si es false (esta afuera), es entrada
@@ -254,24 +244,25 @@ export async function POST(request: NextRequest) {
 
     // Registrar el acceso
     const tiempoRespuestaMs = Math.round(performance.now() - startedAt)
-    const { accessType } = await registrarAcceso(uniqueId, nombre, carrera, isEntry, tiempoRespuestaMs)
+    const { accessType } = await registrarAcceso(numeroControl, nombre, carrera, qrUrl, isEntry, tiempoRespuestaMs)
 
     // Generar mensaje segun tipo de acceso
-    const mensaje = isEntry 
-      ? `¡Bienvenido! Acceso autorizado - ${estatusEncontrado}`
-      : `¡Que tenga buen dia! Salida registrada`
+    const mensaje = isEntry
+      ? `¡Bienvenido, ${nombre}! Acceso autorizado - ${estatus}`
+      : `¡Que tenga buen dia, ${nombre}! Salida registrada`
 
     return NextResponse.json({
       activo: true,
       mensaje,
       nombre,
+      numeroControl,
       accessType,
       carrera
     })
 
   } catch (error) {
     console.error("[v0] Error validating student:", error)
-    
+
     if (error instanceof Error && error.name === "TimeoutError") {
       return NextResponse.json(
         { activo: false, mensaje: "Timeout: La pagina no respondio", nombre: "", accessType: null },
